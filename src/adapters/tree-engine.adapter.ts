@@ -1,9 +1,10 @@
-import { CounterfactualTree, LifeSpecimen } from '../core/models';
+import { CounterfactualTree, LifeNode, LifeSpecimen } from '../core/models';
 import {
   buildCounterfactualTree,
   waterBranch,
   pruneBranch,
-  harvestSpecimen
+  harvestSpecimen,
+  searchLifeNodes
 } from '../core/tree-engine';
 import { TreeEnginePort } from '../ports/tree-engine.port';
 
@@ -22,5 +23,9 @@ export class TreeEngineAdapter implements TreeEnginePort {
 
   harvest(tree: CounterfactualTree, nodeId: string): LifeSpecimen {
     return harvestSpecimen(tree, nodeId);
+  }
+
+  search(tree: CounterfactualTree, query: string): LifeNode[] {
+    return searchLifeNodes(tree, query);
   }
 }

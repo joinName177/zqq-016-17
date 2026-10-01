@@ -198,6 +198,20 @@ export function pruneBranch(tree: CounterfactualTree, nodeId: string): Counterfa
   return { ...tree };
 }
 
+export function searchLifeNodes(tree: CounterfactualTree, query: string): LifeNode[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+
+  return Object.values(tree.nodes)
+    .filter(
+      n =>
+        n.title.toLowerCase().includes(q) ||
+        n.scenarioDescription.toLowerCase().includes(q) ||
+        n.specimenQuote.toLowerCase().includes(q)
+    )
+    .sort((a, b) => a.layerIndex - b.layerIndex);
+}
+
 export function harvestSpecimen(tree: CounterfactualTree, nodeId: string): LifeSpecimen {
   const node = tree.nodes[nodeId];
   if (!node) throw new Error('节点不存在');

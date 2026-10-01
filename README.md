@@ -4,10 +4,10 @@
 
 ## 架构说明（分层架构：核心层 / 端口层 / 适配器层）
 
-- `src/core`：领域模型（`LifeNode`、`LifeSpecimen`、`CounterfactualTree`）与反事实树演化引擎（生长算法、浇水滋养规则、枝桠修剪级联、标本溯源提取）。
+- `src/core`：领域模型（`LifeNode`、`LifeSpecimen`、`CounterfactualTree`）与反事实树演化引擎（生长算法、浇水滋养规则、枝桠修剪级联、标本溯源提取、路径关键词检索）。
 - `src/ports`：端口层契约（`TreeEnginePort` 树引擎运算端口、`SpecimenStoragePort` 标本持久化存储端口）。
 - `src/adapters`：适配器层（预设故事生成与通用假设演化适配器、LocalStorage 标本馆持久化适配器）。
-- `src/ui`：原生 CSS 植物标本馆古典深林美学视觉呈现层，包含分代际时空轨道、生命力灌溉指示器、枝桠修剪动效与平行标本陈列馆。
+- `src/ui`：原生 CSS 植物标本馆古典深林美学视觉呈现层，包含分代际时空轨道、生命力灌溉指示器、枝桠修剪动效、路径搜索定位与平行标本陈列馆。
 
 ## 本地运行
 

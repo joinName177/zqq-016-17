@@ -54,7 +54,8 @@ function refreshView() {
       onToggleCabinet: (open: boolean) => {
         isCabinetOpen = open;
         refreshView();
-      }
+      },
+      onSearchNodes: (query: string) => treeAdapter.search(currentTree, query)
     }
   );
 }

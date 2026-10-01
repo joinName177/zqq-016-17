@@ -7,6 +7,7 @@ export interface TreeUIHandlers {
   onHarvestNode: (nodeId: string) => void;
   onDeleteSpecimen: (id: string) => void;
   onToggleCabinet: (open: boolean) => void;
+  onSearchNodes: (query: string) => LifeNode[];
 }
 
 export function renderTreeApp(
@@ -55,6 +56,17 @@ export function renderTreeApp(
           <span style="color:var(--text-muted);">经典假设母题：</span>
           ${presets.map(p => `<button class="btn-preset" data-preset="${esc(p)}">${esc(p)}</button>`).join('')}
         </div>
+      </section>
+
+      <!-- Path Search Hub -->
+      <section class="search-hub">
+        <div class="search-input-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" class="search-input" id="searchInput" autocomplete="off"
+                 placeholder="路径搜索：输入节点标题或故事关键词，定位树上的平行命运…" />
+          <button class="btn-clear-search" id="btnClearSearch" title="清空搜索" style="display:none;">✕</button>
+        </div>
+        <div class="search-results" id="searchResults"></div>
       </section>
 
       <!-- Main Tree Container -->
@@ -219,5 +231,102 @@ export function renderTreeApp(
       const delId = btn.getAttribute('data-delid');
       if (delId) handlers.onDeleteSpecimen(delId);
     });
+  });
+
+  // Path search: filter nodes by keyword and locate matches on the tree
+  const searchInput = container.querySelector('#searchInput') as HTMLInputElement;
+  const searchResultsEl = container.querySelector('#searchResults') as HTMLElement;
+  const btnClearSearch = container.querySelector('#btnClearSearch') as HTMLButtonElement;
+
+  const highlightKeyword = (text: string, q: string) => {
+    const escapedText = esc(text);
+    const escapedQ = esc(q.trim());
+    if (!escapedQ) return escapedText;
+    const regex = new RegExp(escapedQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    return escapedText.replace(regex, m => `<mark>${m}</mark>`);
+  };
+
+  const locateNode = (nodeId: string) => {
+    const card = container.querySelector(`.node-card[data-id="${nodeId}"]`) as HTMLElement | null;
+    if (!card) return;
+    container.querySelectorAll('.node-card.search-highlight').forEach(el => {
+      el.classList.remove('search-highlight', 'pruned-highlight');
+    });
+    const isPruned = card.classList.contains('pruned');
+    card.classList.add('search-highlight');
+    if (isPruned) card.classList.add('pruned-highlight');
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => card.classList.remove('search-highlight', 'pruned-highlight'), 3200);
+  };
+
+  const renderSearchResults = (rawQuery: string) => {
+    const query = rawQuery.trim();
+    btnClearSearch.style.display = rawQuery ? 'block' : 'none';
+    if (!query) {
+      searchResultsEl.innerHTML = '';
+      searchResultsEl.classList.remove('active');
+      return;
+    }
+
+    const matches = handlers.onSearchNodes(query);
+    searchResultsEl.classList.add('active');
+
+    if (matches.length === 0) {
+      searchResultsEl.innerHTML = `
+        <div class="search-empty">
+          🍂 未寻得与「${esc(query)}」共鸣的命运节点。<br />
+          <span>这片反事实时空尚未生长出此般故事，请换个标题或故事关键词再探。</span>
+        </div>`;
+      return;
+    }
+
+    const aliveCount = matches.filter(m => !m.isPruned).length;
+    searchResultsEl.innerHTML = `
+      <div class="search-count">
+        共寻得 ${matches.length} 个共鸣节点（${aliveCount} 个生长中 / ${matches.length - aliveCount} 个已修剪）
+      </div>
+      ${matches
+        .map(
+          n => `
+        <button class="search-result-item ${n.isPruned ? 'pruned-result' : ''}" data-locate="${n.id}">
+          <div class="result-main">
+            <span class="result-era">${esc(n.eraLabel)} · ${esc(n.categoryName)}</span>
+            <span class="result-title">${highlightKeyword(n.title, query)}</span>
+            <span class="result-desc">${highlightKeyword(n.scenarioDescription, query)}</span>
+          </div>
+          ${
+            n.isPruned
+              ? '<span class="result-note pruned-note">✂️ 此分支已被修剪<br />仅余残影可供凭吊</span>'
+              : '<span class="result-note">🌿 点击定位 →</span>'
+          }
+        </button>
+      `
+        )
+        .join('')}
+    `;
+  };
+
+  searchInput?.addEventListener('input', () => renderSearchResults(searchInput.value));
+  searchInput?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      const first = searchResultsEl.querySelector('[data-locate]');
+      const id = first?.getAttribute('data-locate');
+      if (id) locateNode(id);
+    } else if (e.key === 'Escape') {
+      searchInput.value = '';
+      renderSearchResults('');
+    }
+  });
+
+  btnClearSearch?.addEventListener('click', () => {
+    searchInput.value = '';
+    renderSearchResults('');
+    searchInput.focus();
+  });
+
+  searchResultsEl?.addEventListener('click', e => {
+    const btn = (e.target as HTMLElement).closest('[data-locate]');
+    const id = btn?.getAttribute('data-locate');
+    if (id) locateNode(id);
   });
 }
