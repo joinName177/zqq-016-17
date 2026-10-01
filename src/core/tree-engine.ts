@@ -5,6 +5,21 @@ import {
   LifeCategory
 } from './models';
 
+export interface NodeSearchResult {
+  node: LifeNode;
+  matchFields: string[]; // 命中文本域：标题 / 故事 / 箴言
+  pathWay: string[]; // 从根到该节点的因果路径标题链
+  layerIndex: number;
+  eraLabel: string;
+  isPruned: boolean;
+}
+
+const SEARCH_FIELD_LABELS: Record<string, string> = {
+  title: '标题',
+  scenarioDescription: '故事',
+  specimenQuote: '箴言'
+};
+
 const ERA_LABELS = ['起点分歧点', '+1年·涟漪微漾', '+3年·风向转折', '+5年·航道分野', '+10年·宿命标本'];
 
 const CATEGORY_MAP: Record<LifeCategory, { name: string; color: string }> = {
@@ -225,4 +240,52 @@ export function harvestSpecimen(tree: CounterfactualTree, nodeId: string): LifeS
 
   tree.specimens.push(specimen);
   return specimen;
+}
+
+// Trace a node's causal pathway back to the root (root first, target last)
+export function tracePathWay(tree: CounterfactualTree, nodeId: string): string[] {
+  const pathWay: string[] = [];
+  let curr: LifeNode | undefined = tree.nodes[nodeId];
+  while (curr) {
+    pathWay.unshift(curr.title);
+    curr = curr.parentId ? tree.nodes[curr.parentId] : undefined;
+  }
+  return pathWay;
+}
+
+// Search nodes by title or story keywords. Multiple whitespace-separated
+// keywords are AND-matched; case-insensitive. Results are ordered with live
+// branches before pruned ones, then by generation layer so earlier forks
+// surface first.
+export function searchNodes(tree: CounterfactualTree, keyword: string): NodeSearchResult[] {
+  const terms = keyword.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return [];
+
+  const matchField = (text: string) => terms.every(t => text.toLowerCase().includes(t));
+
+  const results: NodeSearchResult[] = [];
+  const searchableFields: Array<'title' | 'scenarioDescription' | 'specimenQuote'> = [
+    'title',
+    'scenarioDescription',
+    'specimenQuote'
+  ];
+  Object.values(tree.nodes).forEach(node => {
+    const matched = searchableFields.filter(f => matchField(node[f]));
+    if (matched.length === 0) return;
+
+    results.push({
+      node,
+      matchFields: matched.map(f => SEARCH_FIELD_LABELS[f]),
+      pathWay: tracePathWay(tree, node.id),
+      layerIndex: node.layerIndex,
+      eraLabel: node.eraLabel,
+      isPruned: node.isPruned
+    });
+  });
+
+  return results.sort((a, b) => {
+    if (a.isPruned !== b.isPruned) return a.isPruned ? 1 : -1;
+    if (a.layerIndex !== b.layerIndex) return a.layerIndex - b.layerIndex;
+    return a.node.id.localeCompare(b.node.id);
+  });
 }

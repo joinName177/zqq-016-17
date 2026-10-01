@@ -1,4 +1,5 @@
 import { CounterfactualTree, LifeSpecimen, LifeNode } from '../core/models';
+import { NodeSearchResult } from '../core/tree-engine';
 
 export interface TreeUIHandlers {
   onGrowNewTree: (assumption: string) => void;
@@ -7,6 +8,15 @@ export interface TreeUIHandlers {
   onHarvestNode: (nodeId: string) => void;
   onDeleteSpecimen: (id: string) => void;
   onToggleCabinet: (open: boolean) => void;
+  onSearchChange: (keyword: string) => void;
+  onClearSearch: () => void;
+  onLocateNode: (nodeId: string) => void;
+}
+
+export interface SearchPanelState {
+  keyword: string;
+  results: NodeSearchResult[];
+  focusedNodeId: string | null;
 }
 
 export function renderTreeApp(
@@ -15,10 +25,28 @@ export function renderTreeApp(
   specimens: LifeSpecimen[],
   isCabinetOpen: boolean,
   presets: string[],
+  search: SearchPanelState,
   handlers: TreeUIHandlers
 ) {
   const esc = (s: string) =>
     s.replace(/[&<>'"]/g, t => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[t] || t));
+
+  // Remember whether the search box held focus so it can be restored after
+  // the full innerHTML replacement triggered by live typing.
+  const activeEl = document.activeElement as HTMLElement | null;
+  const hadSearchFocus = activeEl?.id === 'pathSearchInput';
+
+  // Escape text, then wrap every keyword occurrence (case-insensitive) in <mark>.
+  const highlight = (text: string) => {
+    const safe = esc(text);
+    const terms = search.keyword
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(t => esc(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    if (terms.length === 0) return safe;
+    return safe.replace(new RegExp(`(${terms.join('|')})`, 'gi'), '<mark class="search-mark">$1</mark>');
+  };
 
   // Organize nodes by layer index (0 to 4)
   const layers: LifeNode[][] = [[], [], [], [], []];
@@ -29,6 +57,21 @@ export function renderTreeApp(
   });
 
   const eraTitles = ['起点分歧点', '+1年·涟漪微漾', '+3年·风向转折', '+5年·航道分野', '+10年·宿命标本'];
+
+  // When a search result is located, mark the target node and every ancestor
+  // on its causal pathway so the user can read the branch end-to-end.
+  const pathNodeIds = new Set<string>();
+  if (search.focusedNodeId && tree.nodes[search.focusedNodeId]) {
+    let cursor: LifeNode | undefined = tree.nodes[search.focusedNodeId];
+    while (cursor) {
+      pathNodeIds.add(cursor.id);
+      cursor = cursor.parentId ? tree.nodes[cursor.parentId] : undefined;
+    }
+  }
+
+  const trimmedKeyword = search.keyword.trim();
+  const liveResultCount = search.results.filter(r => !r.isPruned).length;
+  const prunedResultCount = search.results.length - liveResultCount;
 
   container.innerHTML = `
     <div class="tree-app">
@@ -66,6 +109,82 @@ export function renderTreeApp(
           </span>
         </div>
 
+        <!-- Path Search Hub -->
+        <section class="path-search">
+          <div class="search-input-wrap">
+            <span class="search-icon">🔭</span>
+            <input
+              type="text"
+              class="search-input"
+              id="pathSearchInput"
+              value="${esc(search.keyword)}"
+              placeholder="按节点标题或故事关键词搜索命运路径（多个词以空格分隔）"
+              autocomplete="off"
+            />
+            ${
+              trimmedKeyword
+                ? `<button class="search-clear" id="btnClearSearch" title="清除搜索">✕</button>`
+                : ''
+            }
+          </div>
+
+          ${
+            trimmedKeyword === ''
+              ? `
+            <div class="search-hint search-hint-idle">
+              🔍 输入关键词以在平行时空中定位枝桠——可匹配节点【标题】【故事描述】与【命运箴言】。
+            </div>
+          `
+              : search.results.length === 0
+                ? `
+            <div class="search-hint search-hint-empty">
+              🍂 在当前这棵反事实树上，没有任何节点匹配「${esc(trimmedKeyword)}」。
+              它或许属于另一条从未被浇灌的因果支流——换个关键词，或生长一棵新的假设之树试试。
+            </div>
+          `
+                : `
+            <div class="search-results">
+              <div class="search-results-meta">
+                找到 <strong>${search.results.length}</strong> 个相关节点
+                （${liveResultCount} 个在生${prunedResultCount > 0 ? `，<span class="meta-pruned">${prunedResultCount} 个已修剪</span>` : ''}）
+                —— 点击结果即可沿因果路径定位到树上
+              </div>
+              <div class="search-results-list">
+                ${search.results
+                  .map(
+                    r => `
+                  <button class="search-result-item ${r.isPruned ? 'pruned' : ''} ${
+                      search.focusedNodeId === r.node.id ? 'focused' : ''
+                    }" data-locate="${r.node.id}" style="--cat-color: ${r.node.color};">
+                    <div class="result-head">
+                      <span class="result-era">${esc(r.eraLabel)}</span>
+                      <span class="result-fields">命中：${r.matchFields.map(esc).join(' / ')}</span>
+                      ${
+                        r.isPruned
+                          ? '<span class="result-pruned-tag">🥀 已修剪·定格于虚空中</span>'
+                          : '<span class="result-live-tag">🌿 在生枝桠</span>'
+                      }
+                    </div>
+                    <div class="result-title">${highlight(r.node.title)}</div>
+                    <div class="result-snippet">${highlight(r.node.scenarioDescription)}</div>
+                    <div class="result-path">
+                      ${r.pathWay.map((p, i) => (i === r.pathWay.length - 1 ? highlight(p) : esc(p))).join(' ← ')}
+                    </div>
+                    ${
+                      r.isPruned
+                        ? '<div class="result-pruned-note">该枝桠已被修剪，仍可点击查看它在树上的凋零之处。</div>'
+                        : ''
+                    }
+                  </button>
+                `
+                  )
+                  .join('')}
+              </div>
+            </div>
+          `
+          }
+        </section>
+
         <div class="generations-track">
           ${layers
             .map(
@@ -75,8 +194,11 @@ export function renderTreeApp(
               ${layerNodes
                 .map(
                   node => `
-                <div class="node-card ${node.isPruned ? 'pruned' : ''}" 
-                     style="--cat-color: ${node.color};" 
+                <div class="node-card ${node.isPruned ? 'pruned' : ''} ${
+                  pathNodeIds.has(node.id) ? 'on-path' : ''
+                } ${search.focusedNodeId === node.id ? 'focused-node' : ''}"
+                     id="tree-node-${node.id}"
+                     style="--cat-color: ${node.color};"
                      data-id="${node.id}">
                   <span class="node-category-tag">${esc(node.categoryName)}</span>
                   <div class="node-title">${esc(node.title)}</div>
@@ -218,6 +340,51 @@ export function renderTreeApp(
     btn.addEventListener('click', () => {
       const delId = btn.getAttribute('data-delid');
       if (delId) handlers.onDeleteSpecimen(delId);
+    });
+  });
+
+  // Path search: live filtering on every keystroke. The whole view is
+  // re-rendered on input, so restore focus + caret to keep typing smooth.
+  // IME composition (pinyin etc.) is deferred until compositionend so that
+  // re-rendering does not interrupt in-progress character assembly.
+  const searchInput = container.querySelector('#pathSearchInput') as HTMLInputElement | null;
+  if (searchInput) {
+    if (hadSearchFocus) {
+      searchInput.focus();
+      const caret = searchInput.value.length;
+      searchInput.setSelectionRange(caret, caret);
+    }
+
+    let isComposing = false;
+    const emitSearch = () => handlers.onSearchChange(searchInput.value);
+
+    searchInput.addEventListener('compositionstart', () => {
+      isComposing = true;
+    });
+    searchInput.addEventListener('compositionend', () => {
+      isComposing = false;
+      emitSearch();
+    });
+    searchInput.addEventListener('input', e => {
+      if (!isComposing && !(e as InputEvent).isComposing) emitSearch();
+    });
+
+    searchInput.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !isComposing) {
+        searchInput.value = '';
+        handlers.onClearSearch();
+      }
+    });
+  }
+
+  container.querySelector('#btnClearSearch')?.addEventListener('click', () => {
+    handlers.onClearSearch();
+  });
+
+  container.querySelectorAll('.search-result-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const nodeId = item.getAttribute('data-locate');
+      if (nodeId) handlers.onLocateNode(nodeId);
     });
   });
 }
